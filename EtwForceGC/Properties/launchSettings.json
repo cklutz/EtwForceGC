@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "EtwForceGC": {
+      "commandName": "Project",
+      "commandLineArgs": "45588"
+    }
+  }
+}
