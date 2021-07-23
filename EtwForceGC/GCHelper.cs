@@ -130,13 +130,41 @@ namespace EtwForceGC
         {
             // Fields are not really obsolete, but experimental.
 #pragma warning disable CS0618
-            double mbBefore = gc.HeapSizeBeforeMB;
-            double mbAfter = gc.HeapSizeAfterMB;
-#pragma warning restore CS0618
+            var mbBefore = gc.HeapSizeBeforeMB;
+            var mbAfter = gc.HeapSizeAfterMB;
 
             tw.WriteLine("{0}    heap size before {1:N2} MB, after {2:N2} MB, {3:N2} % freed.",
                 prefix, mbBefore, mbAfter,
                 (100 - (((double)mbAfter / mbBefore) * 100)));
+
+            var compacting = !gc.IsNotCompacting();
+
+            tw.WriteLine("{0}    was compacting: {1}.",
+                prefix, compacting);
+
+            var mbFrags = new[] {
+                gc.GenFragmentationMB(Microsoft.Diagnostics.Tracing.Parsers.Clr.Gens.Gen0),
+                gc.GenFragmentationMB(Microsoft.Diagnostics.Tracing.Parsers.Clr.Gens.Gen1),
+                gc.GenFragmentationMB(Microsoft.Diagnostics.Tracing.Parsers.Clr.Gens.Gen2),
+                gc.GenFragmentationMB(Microsoft.Diagnostics.Tracing.Parsers.Clr.Gens.GenLargeObj),
+                };
+
+            var pcFrags = new[] {
+                gc.GenFragmentationPercent(Microsoft.Diagnostics.Tracing.Parsers.Clr.Gens.Gen0),
+                gc.GenFragmentationPercent(Microsoft.Diagnostics.Tracing.Parsers.Clr.Gens.Gen1),
+                gc.GenFragmentationPercent(Microsoft.Diagnostics.Tracing.Parsers.Clr.Gens.Gen2),
+                gc.GenFragmentationPercent(Microsoft.Diagnostics.Tracing.Parsers.Clr.Gens.GenLargeObj),
+                };
+
+            for (int i = 0; i < mbFrags.Length; ++i)
+            {
+                tw.WriteLine("{0}    mb fragmentation Gen{1} - {2:N2} MB.",
+                    prefix, i, mbFrags[i]);
+
+                tw.WriteLine("{0}     % fragmentation Gen{1} - {2:N2}  %.",
+                    prefix, i, pcFrags[i]);
+            }
+#pragma warning restore CS0618
         }
 
         private static void WriteFormattedHeapStats(TextWriter tw, string prefix, GCHeapStats heapStats)
@@ -149,7 +177,7 @@ namespace EtwForceGC
             data.Add(FormatWithValue(heapStats, h => h.GenerationSize0));
             data.Add(FormatWithValue(heapStats, h => h.GenerationSize1));
             data.Add(FormatWithValue(heapStats, h => h.GenerationSize2));
-            data.Add(FormatWithValue(heapStats, h => h.GenerationSize3));
+            data.Add(FormatWithValue(heapStats, h => h.GenerationSize3, "LOH"));
             data.Add(FormatWithValue(heapStats, h => h.PinnedObjectCount));
             data.Add(FormatWithValue(heapStats, h => h.SinkBlockCount));
             data.Add(FormatWithValue(heapStats, h => h.TotalHeapSize));
@@ -157,7 +185,7 @@ namespace EtwForceGC
             data.Add(FormatWithValue(heapStats, h => h.TotalPromotedSize0));
             data.Add(FormatWithValue(heapStats, h => h.TotalPromotedSize1));
             data.Add(FormatWithValue(heapStats, h => h.TotalPromotedSize2));
-            data.Add(FormatWithValue(heapStats, h => h.TotalPromotedSize3));
+            data.Add(FormatWithValue(heapStats, h => h.TotalPromotedSize3, "LOH"));
 
             int maxName = data.Max(d => d.Item1.Length);
             int maxValue = data.Max(d => d.Item2.Length);
@@ -168,7 +196,7 @@ namespace EtwForceGC
             }
         }
 
-        private static Tuple<string, string> FormatWithValue<T>(GCHeapStats s, Expression<Func<GCHeapStats, T>> exp)
+        private static Tuple<string, string> FormatWithValue<T>(GCHeapStats s, Expression<Func<GCHeapStats, T>> exp, string desc = null)
         {
             if (!(exp.Body is MemberExpression body))
             {
@@ -176,9 +204,9 @@ namespace EtwForceGC
                 body = ubody.Operand as MemberExpression;
             }
 
-            string name = body.Member.Name;
+            var name = body.Member.Name;
             name = Regex.Replace(name, @"(\B[A-Z0-9])", " $1").ToLowerInvariant().Replace("g c ", "GC ");
-
+            name = string.IsNullOrWhiteSpace(desc) ? name : $"{name} ({desc})";
             return Tuple.Create(name, $"{exp.Compile().Invoke(s):N0}");
         }
     }
